@@ -10,7 +10,21 @@ using namespace std;
 void get_URL( const string& host, const string& path )
 {
   cerr << "Function called: get_URL(" << host << ", " << path << ")\n";
-  cerr << "Warning: get_URL() has not been implemented yet.\n";
+
+  Address addr { host, "http" };
+  TCPSocket sock;
+  sock.connect( addr );
+
+  std::string request { "GET " + path + " HTTP/1.1\r\n" + "Host: " + host + "\r\nConnection: close\r\n\r\n" };
+  sock.write( request );
+
+  while ( !sock.eof() ) {
+    std::string buf;
+    sock.read( buf );
+    cout << buf;
+  }
+
+  sock.close();
 }
 
 int main( int argc, char* argv[] )
