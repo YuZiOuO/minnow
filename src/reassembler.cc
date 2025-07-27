@@ -5,16 +5,19 @@ using namespace std;
 
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
-  uint64_t available = output_.writer().available_capacity();
-  uint64_t unacceptable_from = output_.writer().bytes_pushed() + available;
+  auto& writer = output_.writer();
+  uint64_t available = writer.available_capacity();
+  uint64_t pushed = writer.bytes_pushed();
+  uint64_t unacceptable_from = pushed + available;
 
-  if(all_cached_ || first_index >= unacceptable_from){
+  if(all_cached_ || first_index >= unacceptable_from || first_index + data.size() < pushed){
     return;
   }else{
     auto len = data.size();
-    cache_.emplace(data.substr(0UL,max(len,available)),first_index);
-    cached_index_.insert(first_index);
-    if(is_last_substring && len < available){
+    cache_.emplace( data.substr( pushed > first_index ? pushed - first_index : 0, min( len, unacceptable_from-first_index ) ),
+                    max(pushed,first_index) );
+    cached_index_.insert( first_index );
+    if ( is_last_substring && len < available ) {
       all_cached_ = true;
     }
   }
