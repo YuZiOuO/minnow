@@ -1,25 +1,48 @@
 #include "reassembler.hh"
 #include "debug.hh"
+#include <algorithm>
 
 using namespace std;
 
-void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
+void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring)
 {
+  // TODO: organize code structure
   auto& writer = output_.writer();
-  uint64_t available = writer.available_capacity();
   uint64_t pushed = writer.bytes_pushed();
-  uint64_t unacceptable_from = pushed + available;
+  uint64_t unacceptable_index = pushed + writer.available_capacity();
 
-  if(all_cached_ || first_index >= unacceptable_from || first_index + data.size() < pushed){
+  if( all_cached_ || (first_index + data.size() < pushed) || (first_index >= unacceptable_index)){
     return;
   }else{
-    auto len = data.size();
-    cache_.emplace( data.substr( pushed > first_index ? pushed - first_index : 0, min( len, unacceptable_from-first_index ) ),
-                    max(pushed,first_index) );
-    cached_index_.insert( first_index );
-    if ( is_last_substring && len < available ) {
+    if(first_index < pushed){
+      data = data.substr(pushed - first_index);
+      first_index = pushed;
+    }
+    if(first_index + data.size() <= unacceptable_index && is_last_substring){
       all_cached_ = true;
     }
+    data = data.substr(0UL,unacceptable_index > first_index ? unacceptable_index - first_index : 0UL );
+
+    auto data_end_index = first_index + data.size();
+    for(
+      //FIXME: incorrect behavior in this lower_bound;
+      auto pos = std::lower_bound(cache_.begin(),cache_.end(),first_index),next = std::next(pos);
+      (pos != cache_.end()) && pos->index <= data_end_index;
+      pos = next
+    ){
+      if(pos->index + pos->data.size() <= data_end_index){
+        cache_.erase(pos);
+        break;
+      }
+      if(pos->index + pos->data.size() > data_end_index){
+        data = data + pos->data.substr(data_end_index - pos->index);
+        break;
+      }else{
+        break;
+      }
+    }
+
+    cache_.emplace_front(data,first_index);
   }
   flush_();
 }
@@ -31,25 +54,20 @@ void Reassembler::flush_(){
     auto pushed = writer.bytes_pushed(),
     available = writer.available_capacity();
 
-    !cache_.empty() && available > 0 && pushed + 1 != cache_.top().index;
+    !cache_.empty() && available && pushed == cache_.cbegin()->index;
 
     pushed = writer.bytes_pushed(),
     available = writer.available_capacity()
   ){
-    auto seg = cache_.top();
-    cache_.pop();
-    cached_index_.erase(seg.index);
-
-    if(seg.index < pushed){
-      continue;
-    }
-
+    auto& seg = *cache_.begin();
     auto len = seg.data.size();
     writer.push(seg.data.substr(0UL,max(len,available)));
 
     if(len > available){
-      cache_.emplace(seg.data.substr(available,len),seg.index + available);
-      cached_index_.insert(seg.index + available);
+      seg.data = seg.data.substr(available,len);
+      seg.index += available;
+    }else{
+      cache_.pop_front();
     }
   }
 
@@ -62,11 +80,9 @@ void Reassembler::flush_(){
 // This function is for testing only; don't add extra state to support it.
 uint64_t Reassembler::count_bytes_pending() const
 {
-  std::priority_queue<CachedSegment> copy = cache_;
-  uint64_t pending = 0;
-  while(!copy.empty()){
-    pending += copy.top().data.size();
-    copy.pop();
+  uint64_t count = 0;
+  for(auto it:cache_){
+    count += it.data.size();
   }
-  return pending;
+  return count;
 }

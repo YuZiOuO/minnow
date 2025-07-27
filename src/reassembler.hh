@@ -1,17 +1,15 @@
 #pragma once
 
 #include "byte_stream.hh"
-#include <queue>
-#include <string>
-#include <unordered_set>
+#include <list>
 
 struct CachedSegment
 {
   std::string data;
   uint64_t index;
 
-  friend bool operator<(CachedSegment const& lhs,CachedSegment const& rhs){
-    return lhs.index - rhs.index;
+  friend bool operator<(CachedSegment const& seg,uint64_t const& index){
+    return seg.index < index;
   }
 };
 
@@ -19,7 +17,7 @@ class Reassembler
 {
 public:
   // Construct Reassembler to write into given ByteStream.
-  explicit Reassembler( ByteStream&& output ) : output_( std::move( output ) ),cache_(),cached_index_() {}
+  explicit Reassembler( ByteStream&& output ) : output_( std::move( output ) ),cache_() {}
 
   /*
    * Insert a new substring to be reassembled into a ByteStream.
@@ -56,8 +54,7 @@ public:
 
 private:
   ByteStream output_;
-  std::priority_queue<CachedSegment> cache_;
-  std::unordered_set<uint64_t> cached_index_;
+  std::list<CachedSegment> cache_;
   bool all_cached_ = false;
   void flush_(); // flush cached data to output if able(best effort)
 };
