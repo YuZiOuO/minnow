@@ -7,13 +7,12 @@ ByteStream::ByteStream( uint64_t capacity ) : buffer_ {}, capacity_ { capacity }
 void Writer::push( string data )
 {
   auto available_capacity = this->available_capacity();
-  if ( !closed_ && available_capacity ) {
-    auto it = data.begin();
-    while ( buffer_.size() < capacity_ && it != data.end() ) {
-      buffer_.push_back( *it );
-      it++;
-      pushed_count_++;
-    }
+  auto len = data.size();
+  auto bytes_to_be_pushed = min( available_capacity, len );
+
+  if ( !closed_ && len && available_capacity ) {
+    buffer_.insert( buffer_.end(), data.begin(), std::next( data.begin(), bytes_to_be_pushed ) );
+    pushed_count_ += bytes_to_be_pushed;
   }
 }
 
@@ -53,12 +52,9 @@ string_view Reader::peek() const
 
 void Reader::pop( uint64_t len )
 {
-  uint64_t index = 0;
-  while ( index != len && !buffer_.empty() ) {
-    buffer_.pop_front();
-    index++;
-    poped_count_++;
-  }
+  auto bytes_to_be_poped = min( buffer_.size(), len );
+  buffer_.erase( buffer_.begin(), std::next( buffer_.begin(), bytes_to_be_poped ) );
+  poped_count_ += bytes_to_be_poped;
 }
 
 bool Reader::is_finished() const
