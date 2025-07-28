@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
+#include <deque>
 #include <string>
 #include <string_view>
 
@@ -28,7 +28,7 @@ protected:
   uint64_t poped_count_ = 0;
   uint64_t pushed_count_ = 0;
 
-  std::vector<char> buffer_;
+  std::deque<char> buffer_;
   uint64_t capacity_;
   bool error_ {};
 };
