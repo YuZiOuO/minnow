@@ -31,33 +31,37 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
     auto data_end_index = first_index + data.size();
     for(
       //TODO: Refactor with std::move
-      auto pos = std::lower_bound(cache_.begin(),cache_.end(),first_index),next = std::next(pos);
+      auto pos = cache_.begin(),next = std::next(pos);
       pos != cache_.end() && pos->index <= data_end_index;
-      pos = next
+      pos = next,next = std::next(pos)
     ){
       auto current_start = pos->index;
       auto current_end = pos->index + pos->data.size();
-      
-      // if(current_start <= first_index && current_end >= data_end_index){
-      //   return;
-      // }
 
-      // if(current_start < first_index && current_end <= data_end_index){
-      //   data = pos->data.substr(0UL + first_index - current_start);
-      //   first_index = current_start;
-      //   cache_.erase(pos);
-      //   break;
-      // }
+      if(current_end < first_index){
+        continue;
+      }
+      
+      if(current_start <= first_index && current_end >= data_end_index){
+        return;
+      }
+
+      if(current_start < first_index && current_end <= data_end_index){
+        data = pos->data.substr(0UL ,first_index - current_start) + data;
+        first_index = current_start;
+        cache_.erase(pos);
+        continue;
+      }
 
       if(current_start >= first_index && current_end > data_end_index){
         data = data + pos->data.substr(data_end_index - current_start);
         cache_.erase(pos);
-        break;
+        continue;
       }
 
-      if(current_end <= data_end_index){
+      if(current_start >= first_index && current_end <= data_end_index){
         cache_.erase(pos);
-        break;
+        continue;
       }
     }
 

@@ -8,6 +8,10 @@ struct CachedSegment
   std::string data;
   uint64_t index;
 
+  friend bool operator<(uint64_t const& index,CachedSegment const& seg){
+    return index < seg.index;
+  }
+
   friend bool operator<(CachedSegment const& seg,uint64_t const& index){
     return seg.index < index;
   }
