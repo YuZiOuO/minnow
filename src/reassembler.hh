@@ -55,6 +55,8 @@ public:
 private:
   ByteStream output_;
   std::list<CachedSegment> cache_;
+  uint64_t last_index_ = 0;
+  bool last_index_set = false;
   bool all_cached_ = false;
   void flush_(); // flush cached data to output if able(best effort)
 };
