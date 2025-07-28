@@ -12,7 +12,7 @@ void Writer::push( string data )
     while ( buffer_.size() < capacity_ && it != data.end() ) {
       buffer_.push_back( *it );
       it++;
-      pushed_count_ ++;
+      pushed_count_++;
     }
   }
 }
@@ -47,7 +47,7 @@ string_view Reader::peek() const
   if ( buffer_.empty() ) {
     return string_view();
   } else {
-    return string_view(&buffer_.at( 0 ), 1UL);
+    return string_view( &buffer_.at( 0 ), 1UL );
   }
 }
 

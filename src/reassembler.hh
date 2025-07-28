@@ -8,20 +8,14 @@ struct CachedSegment
   std::string data;
   uint64_t index;
 
-  friend bool operator<(uint64_t const& index,CachedSegment const& seg){
-    return index < seg.index;
-  }
-
-  friend bool operator<(CachedSegment const& seg,uint64_t const& index){
-    return seg.index < index;
-  }
+  friend bool operator<( CachedSegment const& seg, uint64_t const& _index ) { return seg.index < _index; }
 };
 
 class Reassembler
 {
 public:
   // Construct Reassembler to write into given ByteStream.
-  explicit Reassembler( ByteStream&& output ) : output_( std::move( output ) ),cache_() {}
+  explicit Reassembler( ByteStream&& output ) : output_( std::move( output ) ), cache_() {}
 
   /*
    * Insert a new substring to be reassembled into a ByteStream.
@@ -61,6 +55,5 @@ private:
   std::list<CachedSegment> cache_;
   uint64_t last_index_ = 0;
   bool last_index_set = false;
-  bool all_cached_ = false;
   void flush_(); // flush cached data to output if able(best effort)
 };

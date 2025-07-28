@@ -4,100 +4,94 @@
 
 using namespace std;
 
-void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring)
+void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
-  // TODO: organize code structure
   auto& writer = output_.writer();
-  uint64_t pushed = writer.bytes_pushed();
-  uint64_t unacceptable_index = pushed + writer.available_capacity();
-  if(is_last_substring){
-    last_index_set = true;
-    last_index_ = first_index + data.size();
-  }
+  auto d_begin_i = first_index;                                 // data_begin_index
+  auto d_end_i = first_index + data.size();                     // data_end_index
+  auto pushed_i = writer.bytes_pushed();                        // pushed_index
+  auto unacceptable_i = pushed_i + writer.available_capacity(); // unacceptable_index
 
-  if(last_index_set && first_index + data.size() > last_index_){
+  if ( is_last_substring ) {
+    last_index_set = true;
+    last_index_ = d_end_i;
+  }
+  if ( last_index_set && d_end_i > last_index_ ) {
     throw exception();
   }
 
-  if( (first_index + data.size() < pushed) || (first_index >= unacceptable_index)){
+  if ( d_end_i < pushed_i || d_begin_i >= unacceptable_i ) {
+    // ignore already processed and unacceptable data
     return;
-  }else{
-    if(first_index < pushed){
-      data = data.substr(pushed - first_index);
-      first_index = pushed;
-    }
-    data = data.substr(0UL,unacceptable_index > first_index ? unacceptable_index - first_index : 0UL );
-
-    auto data_end_index = first_index + data.size();
-    for(
-      //TODO: Refactor with std::move
-      auto pos = cache_.begin(),next = std::next(pos);
-      pos != cache_.end() && pos->index <= data_end_index;
-      pos = next,next = std::next(pos)
-    ){
-      auto current_start = pos->index;
-      auto current_end = pos->index + pos->data.size();
-
-      if(current_end < first_index){
-        continue;
-      }
-      
-      if(current_start <= first_index && current_end >= data_end_index){
-        return;
-      }
-
-      if(current_start < first_index && current_end <= data_end_index){
-        data = pos->data.substr(0UL ,first_index - current_start) + data;
-        first_index = current_start;
-        cache_.erase(pos);
-        continue;
-      }
-
-      if(current_start >= first_index && current_end > data_end_index){
-        data = data + pos->data.substr(data_end_index - current_start);
-        cache_.erase(pos);
-        continue;
-      }
-
-      if(current_start >= first_index && current_end <= data_end_index){
-        cache_.erase(pos);
-        continue;
-      }
-    }
-
-    auto i_pos = std::lower_bound(cache_.begin(),cache_.end(),first_index);
-    cache_.emplace(i_pos,data,first_index);
   }
+
+  // truncate given data to [pushed,unacceptable)
+  if ( d_begin_i < pushed_i ) {
+    data = data.substr( pushed_i - d_begin_i );
+    d_begin_i = pushed_i;
+  }
+  data = data.substr( 0UL, unacceptable_i > d_begin_i ? unacceptable_i - d_begin_i : 0UL );
+
+  // iterater over cached data
+  for (
+    // TODO: Refactor with std::move
+    auto it = cache_.begin(), next = std::next( it ); it != cache_.end() && it->index <= d_end_i;
+    it = next, next = std::next( it ) ) {
+    auto c_begin_i = it->index;                 // current_begin_index
+    auto c_end_i = it->index + it->data.size(); // current_end_index
+
+    if ( c_end_i < d_begin_i ) {
+      continue;
+    }
+
+    if ( c_begin_i <= d_begin_i && c_end_i >= d_end_i ) {
+      return; // ignore already cached data
+    }
+
+    // handle partly overlapping data
+    if ( c_begin_i < d_begin_i && c_end_i <= d_end_i ) {
+      data = it->data.substr( 0UL, d_begin_i - c_begin_i ) + data;
+      d_begin_i = c_begin_i;
+    } else if ( c_begin_i >= d_begin_i && c_end_i > d_end_i ) {
+      data = data + it->data.substr( d_end_i - c_begin_i );
+    }
+
+    // overwrite(delete) overlapping data
+    cache_.erase( it );
+  }
+
+  // cache new data
+  auto i_pos = std::lower_bound( cache_.begin(), cache_.end(), d_begin_i );
+  cache_.emplace( i_pos, data, d_begin_i );
 
   flush_();
 }
 
-void Reassembler::flush_(){
+void Reassembler::flush_()
+{
   auto& writer = output_.writer();
 
-  for(
-    auto pushed = writer.bytes_pushed(),
-    available = writer.available_capacity();
+  for ( auto pushed = writer.bytes_pushed(), available = writer.available_capacity();
 
-    !cache_.empty() && available && pushed == cache_.cbegin()->index;
+        !cache_.empty() && available && pushed == cache_.cbegin()->index;
 
-    pushed = writer.bytes_pushed(),
-    available = writer.available_capacity()
-  ){
+        pushed = writer.bytes_pushed(), available = writer.available_capacity() ) {
     auto& seg = *cache_.begin();
     auto len = seg.data.size();
-    writer.push(seg.data.substr(0UL,max(len,available)));
+    writer.push( seg.data.substr( 0UL, max( len, available ) ) );
 
-    if(len > available){
-      seg.data = seg.data.substr(available,len);
+    if ( len > available ) {
+      seg.data = seg.data.substr( available, len );
       seg.index += available;
-    }else{
+    } else {
       cache_.pop_front();
     }
   }
 
-  // TODO:不能保证cache传来的数据size刚好是last_index_
-  if(last_index_set && writer.bytes_pushed() == last_index_ && cache_.empty()){
+  if ( last_index_set && writer.bytes_pushed() == last_index_ ) {
+    if ( !cache_.empty() ) {
+      throw exception();
+    }
     writer.close();
   }
 }
@@ -107,7 +101,7 @@ void Reassembler::flush_(){
 uint64_t Reassembler::count_bytes_pending() const
 {
   uint64_t count = 0;
-  for(auto it:cache_){
+  for ( auto it : cache_ ) {
     count += it.data.size();
   }
   return count;
