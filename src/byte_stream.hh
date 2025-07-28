@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <string_view>
-#include <list>
 
 class Reader;
 class Writer;
@@ -28,8 +28,7 @@ protected:
   uint64_t poped_count_ = 0;
   uint64_t pushed_count_ = 0;
 
-  std::list<std::string> buffer_;
-  uint64_t buffer_count_ = 0;
+  std::deque<char> buffer_;
   uint64_t capacity_;
   bool error_ {};
 };
