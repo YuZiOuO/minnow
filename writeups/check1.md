@@ -24,8 +24,15 @@ bugs, asymptotic performance, empirical performance, required
 implementation time and difficulty, and other factors. Include any
 measurements if applicable.]
 
+list<string> was used in my impl to store data cached by the assembler.
+The current benefits are that:
+1. easy to implement,and low risk of bug.
+2. not bad performance,the bottleneck seems to be the O(N) search of the inserting position,
+but i thought this would not be a huge effect as the data rougly arrives in sequence.
+3. std::set<string> seems to be a better choice as it has logarithmic search time.
+
 Implementation Challenges:
-[]
+1. deal with partially overlapping data,this brings most of complexity in this impl.
 
 Remaining Bugs:
 []

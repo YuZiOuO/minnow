@@ -23,6 +23,15 @@ bugs, asymptotic performance, empirical performance, required
 implementation time and difficulty, and other factors. Include any
 measurements if applicable.]
 
+deque<char> was used as the container of the bytestream.
+benefits are that:
+1. deque has not bad perf.
+2. it's interface are suitable/easy for pop front/push back
+
+other solution i experimented:
+vector<char>: bad perf, i thought the reason may be frequent resizing.
+list<string>: also bad perf, reason remains unknown.
+
 - Optional: I had unexpected difficulty with: [describe]
 
 - Optional: I think you could make this lab better by: [describe]
