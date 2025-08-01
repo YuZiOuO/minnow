@@ -10,20 +10,21 @@ Wrap32 Wrap32::wrap( uint64_t n, Wrap32 zero_point )
 
 uint64_t Wrap32::unwrap( Wrap32 zero_point, uint64_t checkpoint ) const
 {
+  constexpr uint64_t UINT32_RANGE = (1UL << 32);
+  
+  // seqno_major and minor represents the direct neighbor of the checkpoint.
   uint64_t prefix = checkpoint - static_cast<uint32_t>(checkpoint);
   uint32_t zero_offset = this->raw_value_ - zero_point.raw_value_;
-  constexpr uint64_t power32 = (1UL << 32);
   uint64_t seqno_major = prefix + zero_offset;
-  uint64_t seqno_minor = seqno_major > checkpoint ? seqno_major - power32:seqno_major + power32;
-  if(seqno_major == checkpoint || (seqno_major < power32 && seqno_major > checkpoint)){
-    return seqno_major;
-  }
+  uint64_t seqno_minor = seqno_major > checkpoint ? seqno_major - UINT32_RANGE : seqno_major + UINT32_RANGE;
 
-  // FIXME: it happends that Wrap(1<<63-1).unwrap(0,1<<63-2) was correctly handled,
-  // but not considered.
-  if(seqno_major > checkpoint){
-    return seqno_major - checkpoint > checkpoint - seqno_minor ? seqno_minor : seqno_major;
-  }else{
-    return checkpoint - seqno_major > seqno_minor - checkpoint ? seqno_minor : seqno_major;
+  // compare which one is nearer
+  int64_t major_s = static_cast<int64_t>(seqno_major);
+  int64_t minor_s = static_cast<int64_t>(seqno_minor);
+  int64_t checkpoint_s = static_cast<int64_t>(checkpoint);
+  //special case: different sign, marking the minor has overflowed.
+  if((major_s ^ minor_s) < 0){ 
+    return seqno_major; 
   }
+  return abs(major_s - checkpoint_s) < abs(minor_s - checkpoint_s) ? seqno_major:seqno_minor;
 }
