@@ -1,5 +1,5 @@
 #include "wrapping_integers.hh"
-#include "debug.hh"
+#include <cstdlib>
 
 using namespace std;
 

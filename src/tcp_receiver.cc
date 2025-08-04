@@ -1,6 +1,7 @@
 #include "tcp_receiver.hh"
-#include "debug.hh"
 #include "wrapping_integers.hh"
+#include <limits>
+#include <cstdint>
 
 using namespace std;
 
@@ -13,6 +14,7 @@ void TCPReceiver::receive( TCPSenderMessage message )
     ISN.emplace( message.seqno );
   }
   if ( ISN.has_value() ) {
+
     auto abs_seqno = message.seqno.unwrap( ISN.value(), writer().bytes_pushed() );
     if ( !( abs_seqno == 0 && !message.SYN && !message.payload.empty() ) ) {
       // special case: trying to override seqno occupied by SYN.
