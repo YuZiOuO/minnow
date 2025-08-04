@@ -24,32 +24,39 @@ uint64_t TCPSender::consecutive_retransmissions() const
 
 void TCPSender::push( const TransmitFunction& transmit )
 {
-
-  // TODO: use seq_len API
-  auto bytes_to_be_sent = std::min(
-    { static_cast<uint64_t>( windows_size_ ), reader().bytes_buffered(), TCPConfig::MAX_PAYLOAD_SIZE } );
-  if ( !windows_size_ ) {
-    bytes_to_be_sent = 1;
+  auto seqno_in_flight = sent_abs_seqno_ - acked_abs_seqno_;
+  auto ws = static_cast<uint64_t>( windows_size_ );
+  auto seqno_available =  ws > seqno_in_flight ? ws - seqno_in_flight : 0;
+  if(!ws){
+    seqno_available = 1;
   }
+
   std::string payload;
-  payload.reserve( bytes_to_be_sent );
+  // payload.reserve( bytes_to_be_sent );
 
-  while ( payload.size() != bytes_to_be_sent ) {
-    payload.append( reader().peek() );
-    reader().pop( 1UL );
-  }
-
-  TCPSenderMessage msg = { .seqno = Wrap32::wrap( acked_abs_seqno_, isn_ ),
+  TCPSenderMessage msg = { .seqno = Wrap32::wrap( sent_abs_seqno_, isn_ ),
                            .SYN = !SYN_sent,
                            .payload = payload,
+                           .FIN = false,
                            .RST = reader().has_error() };
-  if ( !SYN_sent ) {
+
+  while ( msg.sequence_length() < seqno_available && reader().bytes_buffered()
+          && payload.size() <= TCPConfig::MAX_PAYLOAD_SIZE ) {
+    msg.payload.append( reader().peek() );
+    reader().pop( 1UL );
+  }
+  msg.FIN = reader().is_finished() && msg.sequence_length() < seqno_available && !FIN_sent;
+
+  if ( !SYN_sent && msg.SYN ) {
     SYN_sent = true;
+  }
+  if(!FIN_sent && msg.FIN){
+    FIN_sent = true;
   }
 
   if ( !msg.payload.empty() || msg.SYN || msg.FIN || msg.RST ) {
     transmit( msg );
-    outstandings_.push( msg );
+    outstandings_.push_back( msg );
     sent_abs_seqno_ += msg.sequence_length();
     if ( !timer_ ) {
       timer_ = time_alive_;
@@ -65,6 +72,9 @@ TCPSenderMessage TCPSender::make_empty_message() const
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   auto msg_acked_abs_seqno = msg.ackno->unwrap( isn_, acked_abs_seqno_ );
+  if(msg_acked_abs_seqno > sent_abs_seqno_){
+    return; // ignore invalid ack.
+  }
 
   windows_size_ = msg.window_size;
   if ( msg.RST ) {
@@ -74,15 +84,16 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   if ( msg_acked_abs_seqno > acked_abs_seqno_ ) {
     // Check Outsandings
     while ( !outstandings_.empty() ) {
-      const auto& top = outstandings_.top();
-      const auto current_abs_seqno
-        = top.seqno.unwrap( isn_, acked_abs_seqno_ ) - 1 + top.sequence_length(); // -1:abs_seqno.begin()
-      if ( msg_acked_abs_seqno > current_abs_seqno ) {
-        outstandings_.pop();
+      const auto& top = *outstandings_.begin();
+      const auto current_abs_seqno_should_be_acked
+        = top.seqno.unwrap( isn_, acked_abs_seqno_ ) + top.sequence_length(); // -1:abs_seqno.begin()
+      if ( msg_acked_abs_seqno > current_abs_seqno_should_be_acked ) {
+        outstandings_.pop_front();
       } else {
         break;
       }
     }
+    
 
     RTO = initial_RTO_ms_;
     acked_abs_seqno_ = msg_acked_abs_seqno;
@@ -99,10 +110,10 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
 
   if ( !outstandings_.empty() && timer_ ) {
     timer_ += ms_since_last_tick;
-    if ( time_alive_ - timer_ > RTO ) {
+    if ( time_alive_ - timer_ >= RTO ) {
       timer_ = time_alive_;
       RTO *= 2;
-      transmit( outstandings_.top() );
+      transmit( *outstandings_.begin() );
     }
   }
 }

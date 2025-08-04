@@ -7,8 +7,7 @@
 
 #include <cstdint>
 #include <functional>
-#include <queue>
-#include <vector>
+#include <deque>
 
 class TCPSender
 {
@@ -16,9 +15,7 @@ public:
 
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
   TCPSender( ByteStream&& input, Wrap32 isn, uint64_t initial_RTO_ms )
-    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms ),outstandings_({[this](const TCPSenderMessage& A,const TCPSenderMessage B){
-      return A.seqno.unwrap(this->isn_, this->acked_abs_seqno_) < B.seqno.unwrap(this->isn_,this->acked_abs_seqno_);
-    }})
+    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms )
   {}
 
   /* Generate an empty TCPSenderMessage */
@@ -51,9 +48,9 @@ private:
   uint64_t initial_RTO_ms_;
 
   bool SYN_sent = false;
+  bool FIN_sent = false;
   
-  using comp = std::function<bool(const TCPSenderMessage&, const TCPSenderMessage&)>;
-  std::priority_queue<TCPSenderMessage,std::vector<TCPSenderMessage>,comp> outstandings_;
+  std::deque<TCPSenderMessage> outstandings_ = {};
   uint64_t RTO = initial_RTO_ms_;
   uint64_t time_alive_ = 0;
   uint64_t timer_ = 0; //reset:set to time_alive;turn off:set to 0;
