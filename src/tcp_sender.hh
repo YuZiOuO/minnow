@@ -8,11 +8,12 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <optional>
 
-class Timer
+class TCPSenderTimer
 {
 public:
-  Timer( uint64_t expire_duration ) : expire_duration_( expire_duration ) {};
+  TCPSenderTimer( uint64_t expire_duration ) : expire_duration_( expire_duration ) {};
   bool started() { return enabled_; }
   bool goes_off() { return time_elapsed_ >= expire_duration_; }
 
@@ -38,12 +39,13 @@ private:
   uint64_t expire_duration_;
 };
 
-enum TCPSenderState{
-  CLOSED, //SYN not sent
-  HANDSHAKE, // SYN sent and not ACKed
-  STREAMING, // SYN sent and ACKed
+enum TCPSenderState
+{
+  CLOSED,      // SYN not sent
+  HANDSHAKE,   // SYN sent and not ACKed
+  STREAMING,   // SYN sent and ACKed
   ZERO_WINDOW, // ZERO WINDOW probe sent
-  FINISHED, // FIN sent
+  FINISHED,    // FIN sent
 };
 
 class TCPSender
@@ -83,17 +85,18 @@ private:
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
 
+  /* Below are non-constant variables. */
   std::deque<TCPSenderMessage> outstandings_ = {};
 
-  // for Timer
   uint64_t current_RTO_ms_ = initial_RTO_ms_;
-  uint64_t time_alive_ = 0;
-  Timer timer_;
+  TCPSenderTimer timer_;
 
   TCPSenderState state_ = CLOSED;
+
+  // Seqno for the zero_window probe, this should be empty if not in ZERO_WINDOW state.
+  std::optional<uint64_t> zw_probe_seqno = std::nullopt;
 
   uint64_t acked_seqno_ = 0;
   uint64_t sent_seqno_ = 0;
   uint16_t windows_size_ = 1;
 };
-

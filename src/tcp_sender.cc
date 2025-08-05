@@ -68,6 +68,7 @@ void TCPSender::push( const TransmitFunction& transmit )
     }
     if ( !window_size ) {
       state_ = ZERO_WINDOW;
+      zw_probe_seqno.emplace( sent_seqno_ );
     }
     sent_seqno_ += msg.sequence_length();
     if ( !timer_.started() ) {
@@ -117,10 +118,13 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
     while ( !outstandings_.empty() ) {
       // Compute seqno that should be acked for the current in-flight packet
       const auto& pkt = *outstandings_.begin();
-      const auto pkt_seqno_to_be_acked = pkt.seqno.unwrap( isn_, acked_seqno_ ) + pkt.sequence_length();
+      const auto pkt_seqno = pkt.seqno.unwrap( isn_, acked_seqno_ );
+      const auto pkt_seqno_to_be_acked = pkt_seqno + pkt.sequence_length();
       if ( msg_acked_seqno >= pkt_seqno_to_be_acked ) {
-        if ( state_ == ZERO_WINDOW && pkt.payload.size() == 1 ) {
-          state_ = STREAMING; // TODO: consider this condition
+        if ( state_ == ZERO_WINDOW && pkt_seqno == zw_probe_seqno ) {
+          // assert(zero_window_probe_pkt_seqno.has_value());
+          state_ = STREAMING;
+          zw_probe_seqno.reset();
         }
         outstandings_.pop_front();
       } else {
@@ -140,8 +144,6 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
 {
-  time_alive_ += ms_since_last_tick;
-
   if ( timer_.started() ) {
     timer_.tick( ms_since_last_tick );
     if ( timer_.goes_off() ) {
