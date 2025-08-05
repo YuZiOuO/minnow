@@ -9,13 +9,30 @@
 #include <functional>
 #include <deque>
 
+class Timer
+{
+public:
+  Timer(uint64_t fire_time_duration):fire_time_duration_(fire_time_duration){};
+  bool started() { return started_; }
+  bool fired() { return time_passed_ >= fire_time_duration_;}
+
+  void start() { started_ = true; }
+  void disable() {started_ = false;}
+  void tick(uint64_t time_passed) {if(started_){time_passed_ += time_passed;}}
+  void reset(uint64_t fire_time_duration) {fire_time_duration_ = fire_time_duration;time_passed_ = 0;started_ = false;}
+private:
+  bool started_ = false;
+  uint64_t time_passed_ = 0;
+  uint64_t fire_time_duration_;
+};
+
 class TCPSender
 {
 public:
 
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
   TCPSender( ByteStream&& input, Wrap32 isn, uint64_t initial_RTO_ms )
-    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms )
+    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms ),timer_(initial_RTO_ms)
   {}
 
   /* Generate an empty TCPSenderMessage */
@@ -49,13 +66,18 @@ private:
 
   bool SYN_sent = false;
   bool FIN_sent = false;
+  bool SYN_ACKED = false;
+
+  bool ws0_probe_sent = false;
   
   std::deque<TCPSenderMessage> outstandings_ = {};
   uint64_t RTO = initial_RTO_ms_;
   uint64_t time_alive_ = 0;
-  uint64_t timer_ = 0; //reset:set to time_alive;turn off:set to 0;
+  Timer timer_;
+
   uint64_t acked_abs_seqno_ = 0;
   uint64_t sent_abs_seqno_ = 0;
   uint16_t windows_size_ = 100;
 };
+
 
