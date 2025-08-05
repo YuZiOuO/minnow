@@ -6,33 +6,44 @@
 #include "wrapping_integers.hh"
 
 #include <cstdint>
-#include <functional>
 #include <deque>
+#include <functional>
 
 class Timer
 {
 public:
-  Timer(uint64_t fire_time_duration):fire_time_duration_(fire_time_duration){};
-  bool started() { return started_; }
-  bool fired() { return time_passed_ >= fire_time_duration_;}
+  Timer( uint64_t expire_duration ) : expire_duration_( expire_duration ) {};
+  bool started() { return enabled_; }
+  bool goes_off() { return time_elapsed_ >= expire_duration_; }
 
-  void start() { started_ = true; }
-  void disable() {started_ = false;}
-  void tick(uint64_t time_passed) {if(started_){time_passed_ += time_passed;}}
-  void reset(uint64_t fire_time_duration) {fire_time_duration_ = fire_time_duration;time_passed_ = 0;started_ = false;}
+  void enable() { enabled_ = true; }
+  void tick( uint64_t time_elapsed )
+  {
+    if ( enabled_ ) {
+      time_elapsed_ += time_elapsed;
+    }
+  }
+
+  // Disable the Timer while setting a new expire duration.
+  void reset( uint64_t expire_duration )
+  {
+    enabled_ = false;
+    expire_duration_ = expire_duration;
+    time_elapsed_ = 0;
+  }
+
 private:
-  bool started_ = false;
-  uint64_t time_passed_ = 0;
-  uint64_t fire_time_duration_;
+  bool enabled_ = false;
+  uint64_t time_elapsed_ = 0;
+  uint64_t expire_duration_;
 };
 
 class TCPSender
 {
 public:
-
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
   TCPSender( ByteStream&& input, Wrap32 isn, uint64_t initial_RTO_ms )
-    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms ),timer_(initial_RTO_ms)
+    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms ), timer_( initial_RTO_ms )
   {}
 
   /* Generate an empty TCPSenderMessage */
@@ -64,20 +75,19 @@ private:
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
 
-  bool SYN_sent = false;
-  bool FIN_sent = false;
-  bool SYN_ACKED = false;
-
-  bool ws0_probe_sent = false;
-  
   std::deque<TCPSenderMessage> outstandings_ = {};
-  uint64_t RTO = initial_RTO_ms_;
+
+  // for Timer
+  uint64_t current_RTO_ms_ = initial_RTO_ms_;
   uint64_t time_alive_ = 0;
   Timer timer_;
 
+  bool SYN_sent = false;
+  bool FIN_sent = false;
+  bool SYN_ACKED = false;
+  bool zero_window_probe_sent = false;
+
   uint64_t acked_abs_seqno_ = 0;
   uint64_t sent_abs_seqno_ = 0;
-  uint16_t windows_size_ = 100;
+  uint16_t windows_size_ = 1;
 };
-
-
