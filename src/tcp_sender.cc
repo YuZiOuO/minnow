@@ -4,6 +4,7 @@
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
 #include "wrapping_integers.hh"
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <sys/types.h>
@@ -14,7 +15,7 @@ using namespace std;
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
 
-  return sent_abs_seqno_ - acked_abs_seqno_;
+  return sent_seqno_ - acked_seqno_;
 }
 
 // This function is for testing only; don't add extra state to support it.
@@ -25,52 +26,56 @@ uint64_t TCPSender::consecutive_retransmissions() const
 
 void TCPSender::push( const TransmitFunction& transmit )
 {
+  if ( state_ == HANDSHAKE || state_ == ZERO_WINDOW || state_ == FINISHED ) {
+    return;
+  }
 
-  auto seqno_in_flight = sent_abs_seqno_ - acked_abs_seqno_;
+  auto seqno_in_flight = sent_seqno_ - acked_seqno_;
   auto window_size = static_cast<uint64_t>( windows_size_ );
   auto seqno_available = window_size > seqno_in_flight ? window_size - seqno_in_flight : 0;
+
+  // Special case: if windows size == 0,construct ZERO_WINDOW probe.
   if ( !window_size ) {
     seqno_available = 1;
   }
 
-  if ( SYN_sent && !SYN_ACKED ) {
-    // Intention: Get the correct windows size, which the first SYN/ACK will return.
-    return;
-  }
-  if ( zero_window_probe_sent ) {
-    return;
-  }
-  
   while ( seqno_available ) {
+    // Construct sender message
     TCPSenderMessage msg = make_empty_message();
-
-    msg.SYN = !SYN_sent;
+    msg.SYN = ( state_ == CLOSED );
     while ( msg.sequence_length() < seqno_available && reader().bytes_buffered()
             && msg.payload.size() < TCPConfig::MAX_PAYLOAD_SIZE ) {
       msg.payload.append( reader().peek() );
       reader().pop( 1UL );
     }
-    msg.FIN = reader().is_finished() && msg.sequence_length() < seqno_available && !FIN_sent;
+    msg.FIN = reader().is_finished() && msg.sequence_length() < seqno_available;
 
-    SYN_sent = SYN_sent || msg.SYN;
-    FIN_sent = FIN_sent || msg.FIN;
-
-    if ( !msg.payload.empty() || msg.SYN || msg.FIN || msg.RST ) {
-      transmit( msg );
-
-      if ( !window_size ) {
-        zero_window_probe_sent = true;
-      }
-
-      outstandings_.push_back( msg );
-      sent_abs_seqno_ += msg.sequence_length();
-      if ( !timer_.started() ) {
-        timer_.reset( current_RTO_ms_ );
-        timer_.enable();
-      }
+    // Abort empty packet
+    if ( msg.payload.empty() && !( msg.SYN || msg.FIN || msg.RST ) ) {
+      break;
     }
 
-    // Update loop helper var
+    // Transmit and push to outstandings
+    transmit( msg );
+    outstandings_.push_back( msg );
+
+    // Update state machine
+    if ( msg.SYN ) {
+      state_ = HANDSHAKE;
+    }
+    if ( msg.FIN ) {
+      state_ = FINISHED;
+    }
+    if ( !window_size ) {
+      state_ = ZERO_WINDOW;
+    }
+    sent_seqno_ += msg.sequence_length();
+    if ( !timer_.started() ) {
+      timer_.reset( current_RTO_ms_ );
+      timer_.enable();
+    }
+
+    // Update seqno available to support multiple packet in a push
     seqno_available -= msg.sequence_length();
     seqno_available = reader().bytes_buffered() ? seqno_available : 0;
   }
@@ -78,7 +83,7 @@ void TCPSender::push( const TransmitFunction& transmit )
 
 TCPSenderMessage TCPSender::make_empty_message() const
 {
-  return { .seqno = Wrap32::wrap( sent_abs_seqno_, isn_ ),
+  return { .seqno = Wrap32::wrap( sent_seqno_, isn_ ),
            .SYN = false,
            .payload = string(),
            .FIN = false,
@@ -93,29 +98,29 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   windows_size_ = msg.window_size;
 
   // Check if the ACK packet have set ackno.If so,decode the ackno and check validity.
-
   bool ACK = msg.ackno.has_value();
   if ( !ACK ) {
     return;
   }
-  auto msg_acked_abs_seqno = msg.ackno.value().unwrap( isn_, acked_abs_seqno_ );
-  if ( msg_acked_abs_seqno > sent_abs_seqno_ ) {
+  auto msg_acked_seqno = msg.ackno.value().unwrap( isn_, acked_seqno_ );
+  if ( msg_acked_seqno > sent_seqno_ ) {
     return;
   }
 
-  if ( SYN_sent && msg_acked_abs_seqno > acked_abs_seqno_ ) {
-    SYN_ACKED = true;
-  }
+  // Handle ACK
+  if ( msg_acked_seqno > acked_seqno_ ) {
+    if ( state_ == HANDSHAKE ) {
+      state_ = STREAMING;
+    }
 
-  if ( msg_acked_abs_seqno > acked_abs_seqno_ ) {
-    // Check Outsandings
+    // Traverse in-flight packets
     while ( !outstandings_.empty() ) {
-      const auto& top = *outstandings_.begin();
-      const auto current_abs_seqno_should_be_acked
-        = top.seqno.unwrap( isn_, acked_abs_seqno_ ) + top.sequence_length(); // -1:abs_seqno.begin()
-      if ( msg_acked_abs_seqno >= current_abs_seqno_should_be_acked ) {
-        if ( top.payload.size() == 1 ) {
-          zero_window_probe_sent = false;
+      // Compute seqno that should be acked for the current in-flight packet
+      const auto& pkt = *outstandings_.begin();
+      const auto pkt_seqno_to_be_acked = pkt.seqno.unwrap( isn_, acked_seqno_ ) + pkt.sequence_length();
+      if ( msg_acked_seqno >= pkt_seqno_to_be_acked ) {
+        if ( state_ == ZERO_WINDOW && pkt.payload.size() == 1 ) {
+          state_ = STREAMING; // TODO: consider this condition
         }
         outstandings_.pop_front();
       } else {
@@ -123,9 +128,9 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
       }
     }
 
+    // Update State Machine
     current_RTO_ms_ = initial_RTO_ms_;
-    acked_abs_seqno_ = msg_acked_abs_seqno;
-
+    acked_seqno_ = msg_acked_seqno;
     timer_.reset( current_RTO_ms_ );
     if ( !outstandings_.empty() ) {
       timer_.enable();
@@ -137,14 +142,13 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
 {
   time_alive_ += ms_since_last_tick;
 
-  if ( !outstandings_.empty() && timer_.started() ) {
+  if ( timer_.started() ) {
     timer_.tick( ms_since_last_tick );
     if ( timer_.goes_off() ) {
-      if ( !zero_window_probe_sent ) {
-        current_RTO_ms_ *= 2;
-      }
+      current_RTO_ms_ = state_ == ZERO_WINDOW ? current_RTO_ms_ : 2 * current_RTO_ms_;
       timer_.reset( current_RTO_ms_ );
       timer_.enable();
+      // assert(!outstandings_.empty());
       transmit( *outstandings_.begin() );
     }
   }

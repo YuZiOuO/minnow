@@ -38,6 +38,14 @@ private:
   uint64_t expire_duration_;
 };
 
+enum TCPSenderState{
+  CLOSED, //SYN not sent
+  HANDSHAKE, // SYN sent and not ACKed
+  STREAMING, // SYN sent and ACKed
+  ZERO_WINDOW, // ZERO WINDOW probe sent
+  FINISHED, // FIN sent
+};
+
 class TCPSender
 {
 public:
@@ -82,12 +90,10 @@ private:
   uint64_t time_alive_ = 0;
   Timer timer_;
 
-  bool SYN_sent = false;
-  bool FIN_sent = false;
-  bool SYN_ACKED = false;
-  bool zero_window_probe_sent = false;
+  TCPSenderState state_ = CLOSED;
 
-  uint64_t acked_abs_seqno_ = 0;
-  uint64_t sent_abs_seqno_ = 0;
+  uint64_t acked_seqno_ = 0;
+  uint64_t sent_seqno_ = 0;
   uint16_t windows_size_ = 1;
 };
+
