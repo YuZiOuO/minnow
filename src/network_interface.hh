@@ -85,8 +85,10 @@ private:
   std::queue<InternetDatagram> datagrams_received_ {};
 
   // Datagrams that are being sending
-  std::unordered_map<Address,InternetDatagram> datagrams_sending_ {};
+  // Key:Address.numeric()
+  std::unordered_map<uint32_t,InternetDatagram> datagrams_sending_ {};
 
   // Cache for resolved Ethernet Address
-  std::unordered_map<Address,EthernetAddress> arp_resolved_address_ {};
+  // Key:Address.numeric()
+  std::unordered_map<uint32_t,EthernetAddress> arp_resolved_address_ {};
 };

@@ -30,22 +30,24 @@ NetworkInterface::NetworkInterface( string_view name,
 //! can be converted to a uint32_t (raw 32-bit IP address) by using the Address::ipv4_numeric() method.
 void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Address& next_hop )
 {
-  if ( arp_resolved_address_.contains( next_hop ) ) {
-    auto dst_addr = ( *arp_resolved_address_.find( next_hop ) ).second;
-    transmit(
-      { .payload = dgram.payload,
-        .header = { .src = this->ethernet_address_, .dst = dst_addr, .type = EthernetHeader::TYPE_IPv4 } } );
+  if ( arp_resolved_address_.find( next_hop.ipv4_numeric() ) != arp_resolved_address_.end() ) {
+    auto dst_addr = ( *arp_resolved_address_.find( next_hop.ipv4_numeric() ) ).second;
+    transmit( {
+      .header = { .dst = dst_addr, .src = this->ethernet_address_, .type = EthernetHeader::TYPE_IPv4 },
+      .payload = dgram.payload,
+    } );
   } else {
-    datagrams_sending_.emplace( next_hop, dgram );
+    datagrams_sending_.emplace( next_hop.ipv4_numeric(), dgram );
     struct ARPMessage arp_msg = {
       .opcode = ARPMessage::OPCODE_REQUEST,
       .sender_ethernet_address = this->ethernet_address_,
       .sender_ip_address = this->ip_address_.ipv4_numeric(),
       .target_ip_address = next_hop.ipv4_numeric(),
     };
-    transmit( { .payload = serialize( arp_msg ),
-                .header = {
-                  .type = EthernetHeader::TYPE_ARP, .src = this->ethernet_address_, .dst = ETHERNET_BROADCAST } } );
+    transmit( {
+      .header = { .dst = ETHERNET_BROADCAST, .src = this->ethernet_address_, .type = EthernetHeader::TYPE_ARP },
+      .payload = serialize( arp_msg ),
+    } );
   }
 }
 
