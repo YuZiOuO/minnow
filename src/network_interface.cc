@@ -35,7 +35,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     auto dst_addr = ( *arp_resolved_address_.find( next_hop.ipv4_numeric() ) ).second;
     transmit( {
       .header = { .dst = dst_addr, .src = this->ethernet_address_, .type = EthernetHeader::TYPE_IPv4 },
-      .payload = dgram.payload,
+      .payload = serialize(dgram),
     } );
     return;
   }
