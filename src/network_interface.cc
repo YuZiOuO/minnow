@@ -58,33 +58,33 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
 //! \param[in] frame the incoming Ethernet frame
 void NetworkInterface::recv_frame( EthernetFrame frame )
 {
-  if ( frame.header.dst != this->ethernet_address_ || frame.header.dst != ETHERNET_BROADCAST ) {
+  if ( frame.header.dst != this->ethernet_address_ && frame.header.dst != ETHERNET_BROADCAST ) {
     return; // Ignoring packet not destined for this interface
   }
 
   // Try parsing as an IP datagram
   InternetDatagram dgram;
-  if ( parse( dgram, frame.payload ) ) {
+  if ( parse( dgram, clone(frame).payload ) ) {
     datagrams_received_.push( dgram );
     return;
   }
 
   // Try parsing as a ARP message
   struct ARPMessage arp_msg;
-  if ( parse( arp_msg, frame.payload ) ) {
+  if ( parse( arp_msg, clone(frame).payload ) ) {
 
     // Cache this ARP Record
     arp_resolved_address_.emplace( arp_msg.sender_ip_address, arp_msg.sender_ethernet_address );
     arp_invalidation_queue_.emplace( time_ms, arp_msg.sender_ip_address );
 
     // If it's a request, send reply
-    if ( arp_msg.opcode == ARPMessage::OPCODE_REQUEST ) {
+    if ( arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == this->ip_address_.ipv4_numeric() ) {
       struct ARPMessage reply_arp_msg = {
         .opcode = ARPMessage::OPCODE_REPLY,
         .sender_ethernet_address = this->ethernet_address_,
         .sender_ip_address = this->ip_address_.ipv4_numeric(),
         .target_ethernet_address = arp_msg.sender_ethernet_address,
-        .target_ip_address = arp_msg.target_ip_address,
+        .target_ip_address = arp_msg.sender_ip_address,
       };
       transmit( { .header = { .dst = arp_msg.sender_ethernet_address,
                               .src = this->ethernet_address_,
