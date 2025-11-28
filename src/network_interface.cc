@@ -43,6 +43,8 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
         return;
       } else {
         // Not replied and last request expired
+        // We should reset dgram queueing
+        datagrams_sending_.erase(datagrams_sending_.find(next_hop.ipv4_numeric()));
         goto send_arp_boardcast;
       }
     }

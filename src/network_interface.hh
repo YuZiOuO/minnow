@@ -95,7 +95,7 @@ private:
   // Time passed since the interface was brought up
   size_t time_ms = 0;
 
-  // queue the given datagram
+  // Queue the given datagram
   void queue_dgram(const InternetDatagram& dgram, const Address& next_hop);
 
   // Datagrams that are being sending
