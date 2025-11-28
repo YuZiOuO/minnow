@@ -36,9 +36,9 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     const auto& [ip, arp] = *record;
 
     // Check if arp was not replied
-    constexpr size_t EXPIRE_TIME_MS = 5 * 1000; // 5s
+    constexpr size_t ARP_REQUEST_EXPIRE_TIME = 5 * 1000; // 5s
     if ( not arp.ethernet_address.has_value() ) {
-      if ( time_ms - arp.timestamp <= EXPIRE_TIME_MS ) {
+      if ( time_ms - arp.timestamp <= ARP_REQUEST_EXPIRE_TIME ) {
         return;
       } else {
         // Not replied and last request expired
@@ -46,10 +46,10 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
       }
     }
 
-    // ARP was repiled,
+    // ARP was replied,
     // Check if expired
-    constexpr size_t EXPIRE_TIME = 30 * 1000; // 30s
-    if ( arp.timestamp - time_ms > EXPIRE_TIME ) {
+    constexpr size_t ARP_REPLY_EXPIRE_TIME = 30 * 1000; // 30s
+    if ( time_ms - arp.timestamp > ARP_REPLY_EXPIRE_TIME ) {
       goto send_arp_boardcast;
     }
 
