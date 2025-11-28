@@ -39,6 +39,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     constexpr size_t ARP_REQUEST_EXPIRE_TIME = 5 * 1000; // 5s
     if ( not arp.ethernet_address.has_value() ) {
       if ( time_ms - arp.timestamp <= ARP_REQUEST_EXPIRE_TIME ) {
+        queue_dgram(dgram,next_hop);
         return;
       } else {
         // Not replied and last request expired
@@ -63,8 +64,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
   }
 
 send_arp_boardcast:
-  // Cacheing this datagram and send arp message
-  datagrams_sending_.emplace( next_hop.ipv4_numeric(), dgram );
+  queue_dgram(dgram,next_hop);
   struct ARPMessage arp_msg = {
     .opcode = ARPMessage::OPCODE_REQUEST,
     .sender_ethernet_address = this->ethernet_address_,
@@ -134,14 +134,19 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
     if ( arp_msg.opcode == ARPMessage::OPCODE_REPLY ) {
       auto it = datagrams_sending_.find( arp_msg.sender_ip_address );
       if ( it != datagrams_sending_.end() ) {
-        transmit({
-          .header = {
-            .dst = arp_msg.sender_ethernet_address,
-            .src = arp_msg.target_ethernet_address,
-            .type = EthernetHeader::TYPE_IPv4,
-          },
-          .payload = serialize(it->second),
-        });
+        // A queue to given ip adddress found.
+        auto& queue = ( *it ).second;
+        while ( not queue.empty() ) {
+          transmit({
+            .header = {
+              .dst = arp_msg.sender_ethernet_address,
+              .src = arp_msg.target_ethernet_address,
+              .type = EthernetHeader::TYPE_IPv4,
+            },
+            .payload = serialize(queue.front()),
+          });
+          queue.pop();
+        }
         datagrams_sending_.erase( it );
       }
     }
@@ -152,4 +157,11 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
 void NetworkInterface::tick( const size_t ms_since_last_tick )
 {
   time_ms += ms_since_last_tick;
+}
+
+void NetworkInterface::queue_dgram(const InternetDatagram& dgram, const Address& next_hop){
+  auto [dgram_queue_iter, _] = datagrams_sending_.try_emplace( next_hop.ipv4_numeric() );
+  auto& dgram_queue = ( *dgram_queue_iter ).second;
+  dgram_queue.emplace( dgram );
+  return;
 }

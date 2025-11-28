@@ -95,9 +95,11 @@ private:
   // Time passed since the interface was brought up
   size_t time_ms = 0;
 
+  // queue the given datagram
+  void queue_dgram(const InternetDatagram& dgram, const Address& next_hop);
+
   // Datagrams that are being sending
-  // Key:Address.numeric()
-  std::unordered_map<uint32_t, InternetDatagram> datagrams_sending_ {};
+  std::unordered_map<uint32_t, std::queue<InternetDatagram>>datagrams_sending_ {};
 
   // Cache for on-flight and resolved ARP record
   std::unordered_map<uint32_t, struct ARPRecord> arp_ {};
