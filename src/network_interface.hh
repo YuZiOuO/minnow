@@ -68,6 +68,13 @@ public:
   OutputPort& output() { return *port_; }
   std::queue<InternetDatagram>& datagrams_received() { return datagrams_received_; }
 
+  struct ARPRecord
+  {
+    std::optional<EthernetAddress> ethernet_address;
+    size_t timestamp;
+    // If ethernet address not set,represents last arp time,else represents how long the record has lived.
+  };
+
 private:
   // Human-readable name of the interface
   std::string name_;
@@ -90,14 +97,8 @@ private:
 
   // Datagrams that are being sending
   // Key:Address.numeric()
-  std::unordered_map<uint32_t,InternetDatagram> datagrams_sending_ {};
+  std::unordered_map<uint32_t, InternetDatagram> datagrams_sending_ {};
 
-  // Cache for resolved Ethernet Address
-  // Key:Address.numeric()
-  std::unordered_map<uint32_t,EthernetAddress> arp_resolved_address_ {};
-
-  // Queue for invalidate resolved ARP records.
-  // Key: Time when this arp record is added.
-  // Value: IP Address.
-  std::queue<std::pair<size_t,uint32_t>> arp_invalidation_queue_ {};
+  // Cache for on-flight and resolved ARP record
+  std::unordered_map<uint32_t, struct ARPRecord> arp_ {};
 };

@@ -30,16 +30,39 @@ NetworkInterface::NetworkInterface( string_view name,
 //! can be converted to a uint32_t (raw 32-bit IP address) by using the Address::ipv4_numeric() method.
 void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Address& next_hop )
 {
-  // Directly send datagram if arp is cached
-  if ( arp_resolved_address_.find( next_hop.ipv4_numeric() ) != arp_resolved_address_.end() ) {
-    auto dst_addr = ( *arp_resolved_address_.find( next_hop.ipv4_numeric() ) ).second;
+  // Address was requested
+  auto record = arp_.find( next_hop.ipv4_numeric() );
+  if ( record != arp_.end() ) {
+    const auto& [ip, arp] = *record;
+
+    // Check if arp was not replied
+    constexpr size_t EXPIRE_TIME_MS = 5 * 1000; // 5s
+    if ( not arp.ethernet_address.has_value() ) {
+      if ( time_ms - arp.timestamp <= EXPIRE_TIME_MS ) {
+        return;
+      } else {
+        // Not replied and last request expired
+        goto send_arp_boardcast;
+      }
+    }
+
+    // ARP was repiled,
+    // Check if expired
+    constexpr size_t EXPIRE_TIME = 30 * 1000; // 30s
+    if ( arp.timestamp - time_ms > EXPIRE_TIME ) {
+      goto send_arp_boardcast;
+    }
+
+    // Directly send datagram if arp is valid
     transmit( {
-      .header = { .dst = dst_addr, .src = this->ethernet_address_, .type = EthernetHeader::TYPE_IPv4 },
-      .payload = serialize(dgram),
+      .header
+      = { .dst = arp.ethernet_address.value(), .src = this->ethernet_address_, .type = EthernetHeader::TYPE_IPv4 },
+      .payload = serialize( dgram ),
     } );
     return;
   }
 
+send_arp_boardcast:
   // Cacheing this datagram and send arp message
   datagrams_sending_.emplace( next_hop.ipv4_numeric(), dgram );
   struct ARPMessage arp_msg = {
@@ -52,6 +75,15 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     .header = { .dst = ETHERNET_BROADCAST, .src = this->ethernet_address_, .type = EthernetHeader::TYPE_ARP },
     .payload = serialize( arp_msg ),
   } );
+
+  if ( record != arp_.end() ) {
+    auto& [ip, arp] = *record;
+    arp.ethernet_address.reset();
+    arp.timestamp = time_ms;
+  } else {
+    struct ARPRecord r = { .ethernet_address = {}, .timestamp = time_ms };
+    arp_.emplace( next_hop.ipv4_numeric(), r );
+  }
   return;
 }
 
@@ -64,21 +96,27 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
 
   // Try parsing as an IP datagram
   InternetDatagram dgram;
-  if ( parse( dgram, clone(frame).payload ) ) {
+  if ( parse( dgram, clone( frame ).payload ) ) {
     datagrams_received_.push( dgram );
     return;
   }
 
   // Try parsing as a ARP message
   struct ARPMessage arp_msg;
-  if ( parse( arp_msg, clone(frame).payload ) ) {
-
-    // Cache this ARP Record
-    arp_resolved_address_.emplace( arp_msg.sender_ip_address, arp_msg.sender_ethernet_address );
-    arp_invalidation_queue_.emplace( time_ms, arp_msg.sender_ip_address );
+  if ( parse( arp_msg, clone( frame ).payload ) ) {
+    // Override or construct record
+    auto record = arp_.find( arp_msg.sender_ip_address );
+    if ( record != arp_.end() ) {
+      auto& [ip, arp] = *record;
+      arp.ethernet_address = arp_msg.sender_ethernet_address, arp.timestamp = time_ms;
+    } else {
+      struct ARPRecord r = { .ethernet_address = arp_msg.sender_ethernet_address, .timestamp = time_ms };
+      arp_.emplace( arp_msg.sender_ip_address, r );
+    }
 
     // If it's a request, send reply
-    if ( arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == this->ip_address_.ipv4_numeric() ) {
+    if ( arp_msg.opcode == ARPMessage::OPCODE_REQUEST
+         && arp_msg.target_ip_address == this->ip_address_.ipv4_numeric() ) {
       struct ARPMessage reply_arp_msg = {
         .opcode = ARPMessage::OPCODE_REPLY,
         .sender_ethernet_address = this->ethernet_address_,
@@ -114,10 +152,4 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
 void NetworkInterface::tick( const size_t ms_since_last_tick )
 {
   time_ms += ms_since_last_tick;
-  constexpr size_t EXPIRE_TIME = 30 * 1000; // 30s
-
-  // Invalidate all expired arp record.
-  while ( arp_invalidation_queue_.size() && time_ms - arp_invalidation_queue_.front().first > EXPIRE_TIME ) {
-    arp_invalidation_queue_.pop();
-  }
 }
