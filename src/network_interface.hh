@@ -6,6 +6,8 @@
 
 #include <memory>
 #include <queue>
+#include <unordered_map>
+#include <utility>
 
 // A "network interface" that connects IP (the internet layer, or network layer)
 // with Ethernet (the network access layer, or link layer).
@@ -66,6 +68,13 @@ public:
   OutputPort& output() { return *port_; }
   std::queue<InternetDatagram>& datagrams_received() { return datagrams_received_; }
 
+  struct ARPRecord
+  {
+    std::optional<EthernetAddress> ethernet_address;
+    size_t timestamp;
+    // If ethernet address not set,represents last arp time,else represents how long the record has lived.
+  };
+
 private:
   // Human-readable name of the interface
   std::string name_;
@@ -82,4 +91,16 @@ private:
 
   // Datagrams that have been received
   std::queue<InternetDatagram> datagrams_received_ {};
+
+  // Time passed since the interface was brought up
+  size_t time_ms = 0;
+
+  // Queue the given datagram
+  void queue_dgram(const InternetDatagram& dgram, const Address& next_hop);
+
+  // Datagrams that are being sending
+  std::unordered_map<uint32_t, std::queue<InternetDatagram>>datagrams_sending_ {};
+
+  // Cache for on-flight and resolved ARP record
+  std::unordered_map<uint32_t, struct ARPRecord> arp_ {};
 };
