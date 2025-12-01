@@ -46,7 +46,23 @@ void Router::add_route( const uint32_t route_prefix,
 // Go through all the interfaces, and route every incoming datagram to its proper outgoing interface.
 void Router::route()
 {
-  debug( "unimplemented route() called" );
+  for ( const auto& src_interface_ptr : interfaces_ ) {
+    auto& src_interface = *src_interface_ptr;
+    auto& queue = src_interface.datagrams_received();
+    while ( !queue.empty() ) {
+      auto& pkt = queue.front();
+      auto dst_addr = Address::from_ipv4_numeric(pkt.header.dst);
+      auto dst_interface_num = find_interface(dst_addr);
+
+      if(dst_interface_num.has_value()){
+        auto dst_interface_ptr = interface(dst_interface_num.value());
+        dst_interface_ptr->send_datagram(pkt,dst_addr);
+      }
+      // else: no route is matched, drop this packet.
+      
+      queue.pop();
+    }
+  }
 }
 
 std::optional<size_t> Router::find_interface( const Address& destination )
@@ -58,7 +74,7 @@ std::optional<size_t> Router::find_interface( const Address& destination )
     uint32_t masked_destination = destination.ipv4_numeric() & mask;
 
     for ( const auto& route : routes ) {
-      if ( masked_destination == route.route_prefix & mask ) {
+      if ( masked_destination == (route.route_prefix & mask )) {
         return route.next_hop.has_value() ? find_interface( route.next_hop.value() ) : route.interface_num;
       }
     }
