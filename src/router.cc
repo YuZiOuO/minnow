@@ -22,7 +22,7 @@ void Router::add_route( const uint32_t route_prefix,
        << static_cast<int>( prefix_length ) << " => " << ( next_hop.has_value() ? next_hop->ip() : "(direct)" )
        << " on interface " << interface_num << "\n";
 
-  auto [it, _] = routes_.try_emplace( route_prefix );
+  auto [it, _] = routes_.try_emplace( prefix_length );
 
   auto routes_in_this_length = ( *it ).second;
 
