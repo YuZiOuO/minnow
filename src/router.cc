@@ -24,7 +24,7 @@ void Router::add_route( const uint32_t route_prefix,
 
   auto [it, _] = routes_.try_emplace( prefix_length );
 
-  auto routes_in_this_length = ( *it ).second;
+  auto& routes_in_this_length = ( *it ).second;
 
   auto existing_route = std::find_if( routes_in_this_length.begin(),
                                       routes_in_this_length.end(),
@@ -56,6 +56,9 @@ void Router::route()
 
       if(dst_interface_num.has_value()){
         auto dst_interface_ptr = interface(dst_interface_num.value());
+
+        // fixme: ttl not decremented
+
         dst_interface_ptr->send_datagram(pkt,dst_addr);
       }
       // else: no route is matched, drop this packet.
