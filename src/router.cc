@@ -57,9 +57,12 @@ void Router::route()
       if(dst_interface_num.has_value()){
         auto dst_interface_ptr = interface(dst_interface_num.value());
 
-        // fixme: ttl not decremented
-
-        dst_interface_ptr->send_datagram(pkt,dst_addr);
+        InternetDatagram pkt_outgoing(pkt);
+        pkt_outgoing.header.ttl --;
+        if(pkt_outgoing.header.ttl){
+          pkt_outgoing.header.compute_checksum();
+          dst_interface_ptr->send_datagram(pkt_outgoing,dst_addr);
+        }
       }
       // else: no route is matched, drop this packet.
       
