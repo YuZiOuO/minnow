@@ -50,18 +50,19 @@ void Router::route()
     auto& src_interface = *src_interface_ptr;
     auto& queue = src_interface.datagrams_received();
     while ( !queue.empty() ) {
-      auto& pkt = queue.front();
-      auto dst_addr = Address::from_ipv4_numeric(pkt.header.dst);
+      auto& pkt_incoming = queue.front();
+
+      auto dst_addr = Address::from_ipv4_numeric(pkt_incoming.header.dst);
       auto route = find_route(dst_addr);
 
       if(route.has_value()){
-        auto dst_interface_ptr = interface(route.value().interface_num);
+        auto dst_interface = interface(route.value().interface_num);
 
-        InternetDatagram pkt_outgoing(pkt);
+        InternetDatagram pkt_outgoing(pkt_incoming);
         pkt_outgoing.header.ttl --;
-        if(pkt_outgoing.header.ttl){
+        if(pkt_incoming.header.ttl && pkt_outgoing.header.ttl){ // Edge case: receive a pkt with ttl = 0
           pkt_outgoing.header.compute_checksum();
-          dst_interface_ptr->send_datagram(pkt_outgoing,route.value().next_hop.value_or(dst_addr));
+          dst_interface->send_datagram(pkt_outgoing,route.value().next_hop.value_or(dst_addr));
         }
       }
       // else: no route is matched, drop this packet.

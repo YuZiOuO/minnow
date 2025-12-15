@@ -48,7 +48,7 @@ private:
   // Maps Prefix lengths to route vectors
   std::map<uint8_t,std::vector<struct Route>,std::greater<uint8_t>> routes_;
 
-  // Given destination IP address, find the number of the interface to which the packet should be forwarded
+  // Given destination IP address, find the route.
   // If return null, the packet should be dropped.
   std::optional<Route> find_route(const Address& destination);
 };
