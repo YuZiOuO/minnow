@@ -52,16 +52,16 @@ void Router::route()
     while ( !queue.empty() ) {
       auto& pkt = queue.front();
       auto dst_addr = Address::from_ipv4_numeric(pkt.header.dst);
-      auto dst_interface_num = find_interface(dst_addr);
+      auto route = find_route(dst_addr);
 
-      if(dst_interface_num.has_value()){
-        auto dst_interface_ptr = interface(dst_interface_num.value());
+      if(route.has_value()){
+        auto dst_interface_ptr = interface(route.value().interface_num);
 
         InternetDatagram pkt_outgoing(pkt);
         pkt_outgoing.header.ttl --;
         if(pkt_outgoing.header.ttl){
           pkt_outgoing.header.compute_checksum();
-          dst_interface_ptr->send_datagram(pkt_outgoing,dst_addr);
+          dst_interface_ptr->send_datagram(pkt_outgoing,route.value().next_hop.value_or(dst_addr));
         }
       }
       // else: no route is matched, drop this packet.
@@ -71,7 +71,7 @@ void Router::route()
   }
 }
 
-std::optional<size_t> Router::find_interface( const Address& destination )
+std::optional<Router::Route> Router::find_route( const Address& destination )
 {
   // traverse all routes, starting from routes of highest prefix length.
   for ( const auto& routes_in_some_prefix : routes_ ) {
@@ -81,10 +81,10 @@ std::optional<size_t> Router::find_interface( const Address& destination )
 
     for ( const auto& route : routes ) {
       if ( masked_destination == (route.route_prefix & mask )) {
-        return route.next_hop.has_value() ? find_interface( route.next_hop.value() ) : route.interface_num;
+        return route;
       }
     }
   }
 
-  return std::make_optional<size_t>();
+  return std::nullopt;
 }

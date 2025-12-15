@@ -50,5 +50,5 @@ private:
 
   // Given destination IP address, find the number of the interface to which the packet should be forwarded
   // If return null, the packet should be dropped.
-  std::optional<size_t> find_interface(const Address& destination);
+  std::optional<Route> find_route(const Address& destination);
 };
