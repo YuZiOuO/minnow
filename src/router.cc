@@ -76,7 +76,7 @@ std::optional<Router::Route> Router::find_route( const Address& destination )
   // traverse all routes, starting from routes of highest prefix length.
   for ( const auto& routes_in_some_prefix : routes_ ) {
     const auto& [prefix_length, routes] = routes_in_some_prefix;
-    uint32_t mask = ( (int32_t)1 << 31 ) >> prefix_length; // Undefined behavior 
+    uint32_t mask = prefix_length ? (~(uint32_t)0) << (32 - prefix_length) : 0;
     uint32_t masked_destination = destination.ipv4_numeric() & mask;
 
     for ( const auto& route : routes ) {
