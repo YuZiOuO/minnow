@@ -112,13 +112,15 @@ uint64_t Reassembler::count_bytes_pending() const
  * Return true if merge success, else makes no changes in 'to'.
  */
 bool merge(CachedSegment& to,const CachedSegment& from){
-  if((from.end < to.begin) or (from.begin > to.end)){
-    return false;
+  // Edge case: 'from' includes 'to'
+  if((to.begin >= from.begin) and (to.end <= from.end)){
+    to = from;
+    return true;
   }
 
-  if((from.begin >= to.begin) and (from.end <= to.end)){
-    return true; // totally overlap
-  }
+  if((from.end < to.begin) or (from.begin > to.end)) return false;
+
+  if((from.begin >= to.begin) and (from.end <= to.end)) return true; // totally overlap
 
   if(from.begin < to.begin){
     // left partial overlap
