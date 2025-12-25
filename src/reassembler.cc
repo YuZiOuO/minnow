@@ -6,64 +6,51 @@ using namespace std;
 
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
-  auto& writer = output_.writer();
-  auto d_begin_i = first_index;                                 // data_begin_index
-  auto d_end_i = first_index + data.size();                     // data_end_index
-  auto pushed_i = writer.bytes_pushed();                        // pushed_index
-  auto unacceptable_i = pushed_i + writer.available_capacity(); // unacceptable_index
+  CachedSegment newSeg{data,first_index,first_index + data.size()};
+  auto pushed_i = output_.writer().bytes_pushed();                        // pushed_index
+  auto unacceptable_i = pushed_i + output_.writer().available_capacity(); // unacceptable_index
 
+  // Record if it's last string
   if ( is_last_substring ) {
     last_index_set = true;
-    last_index_ = d_end_i;
+    last_index_ = newSeg.end;
   }
-  if ( last_index_set && d_end_i > last_index_ ) {
+
+  // Assert: no data after last_index_
+  if ( last_index_set && newSeg.end > last_index_ ) {
     throw exception();
   }
 
-  if ( d_end_i < pushed_i || d_begin_i >= unacceptable_i ) {
-    // ignore already processed and unacceptable data
+  // ignore already processed and unacceptable data
+  if ( newSeg.end < pushed_i || newSeg.begin >= unacceptable_i ) {
     return;
   }
 
   // truncate given data to [pushed,unacceptable)
-  if ( d_begin_i < pushed_i ) {
-    data = data.substr( pushed_i - d_begin_i );
-    d_begin_i = pushed_i;
+  if ( newSeg.begin < pushed_i ) {
+    data = data.substr( pushed_i - newSeg.begin );
+    newSeg.begin = pushed_i;
   }
-  data = data.substr( 0UL, unacceptable_i > d_begin_i ? unacceptable_i - d_begin_i : 0UL );
+  data = data.substr(0UL,unacceptable_i - newSeg.begin);
+  newSeg.end = unacceptable_i < newSeg.end ? unacceptable_i : newSeg.end;
 
-  // iterater over cached data
-  for (
-    // TODO: Refactor with std::move
-    auto it = cache_.begin(), next = std::next( it ); it != cache_.end() && it->index <= d_end_i;
-    it = next, next = std::next( it ) ) {
-    auto c_begin_i = it->index;                 // current_begin_index
-    auto c_end_i = it->index + it->data.size(); // current_end_index
+  // Merge any overlapped segment into newSeg
+  auto search_start = cache_.lower_bound(newSeg);
+  if(search_start != cache_.begin()) search_start--;
+  CachedSegment end{"",newSeg.end,std::string::npos};
+  auto search_end = cache_.upper_bound(end);
 
-    if ( c_end_i < d_begin_i ) {
-      continue;
+  auto it = search_start;
+  while(it != search_end){
+    bool merged = merge(newSeg,*it);
+    ++it;
+    if(merged){ 
+      cache_.erase(std::prev(it));
     }
-
-    if ( c_begin_i <= d_begin_i && c_end_i >= d_end_i ) {
-      return; // ignore already cached data
-    }
-
-    // handle partly overlapping data
-    if ( c_begin_i < d_begin_i && c_end_i <= d_end_i ) {
-      data = it->data.substr( 0UL, d_begin_i - c_begin_i ) + data;
-      d_begin_i = c_begin_i;
-    } else if ( c_begin_i >= d_begin_i && c_end_i > d_end_i ) {
-      data = data + it->data.substr( d_end_i - c_begin_i );
-    }
-
-    // overwrite(delete) overlapping data
-    cache_.erase( it );
   }
 
-  // cache new data
-  auto i_pos = std::lower_bound( cache_.begin(), cache_.end(), d_begin_i );
-  cache_.emplace( i_pos, data, d_begin_i );
-
+  // Insert merged segment
+  cache_.emplace(newSeg);
   flush_();
 }
 
@@ -71,20 +58,26 @@ void Reassembler::flush_()
 {
   auto& writer = output_.writer();
 
-  for ( auto pushed = writer.bytes_pushed(), available = writer.available_capacity();
+  while(!cache_.empty()){
+    auto available = writer.available_capacity();
+    auto pushed = writer.bytes_pushed();
 
-        !cache_.empty() && available && pushed == cache_.cbegin()->index;
+    auto seg = cache_.extract(cache_.begin());
+    auto len = seg.value().data.size();
 
-        pushed = writer.bytes_pushed(), available = writer.available_capacity() ) {
-    auto& seg = *cache_.begin();
-    auto len = seg.data.size();
-    writer.push( seg.data.substr( 0UL, max( len, available ) ) );
+    // do not push those already pushed bytes
+    if(seg.value().end <= pushed){
+      continue;
+    }
+    auto push_start = pushed > seg.value().begin ? pushed - seg.value().begin : 0UL;
 
     if ( len > available ) {
-      seg.data = seg.data.substr( available, len );
-      seg.index += available;
+      writer.push(seg.value().data.substr(push_start,available));
+      seg.value().data = seg.value().data.substr( available, std::string::npos );
+      seg.value().begin += available;
+      break;
     } else {
-      cache_.pop_front();
+      writer.push(seg.value().data);
     }
   }
 
@@ -105,4 +98,29 @@ uint64_t Reassembler::count_bytes_pending() const
     count += it.data.size();
   }
   return count;
+}
+
+/**
+ * Merge the Segment 'from' to 'to'. After the merge, Segment 'from' totaly includes 'from'.
+ * Return true if merge success, else makes no changes in 'to'.
+ */
+bool merge(CachedSegment& to,const CachedSegment& from){
+  if((from.end < to.begin) or (from.begin > to.end)){
+    return false;
+  }
+
+  if((from.begin >= to.end) and (from.end <= to.begin)){
+    return true; // totally overlap
+  }
+
+  if(from.begin < to.begin){
+    // left partial overlap
+    to.data = from.data.substr(0UL,to.begin - from.begin) + to.data;
+    to.begin = from.begin;
+  }else{
+    // right partial overlap
+    to.data.append(from.data.substr(to.end - from.begin,std::string::npos));
+    to.end = from.end;
+  }
+  return true;
 }

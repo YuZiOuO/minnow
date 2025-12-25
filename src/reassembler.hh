@@ -1,14 +1,15 @@
 #pragma once
 
 #include "byte_stream.hh"
-#include <list>
+#include <set>
 
 struct CachedSegment
 {
   std::string data;
-  uint64_t index;
+  uint64_t begin;
+  uint64_t end;
 
-  friend bool operator<( CachedSegment const& seg, uint64_t const& _index ) { return seg.index < _index; }
+  friend bool operator<( CachedSegment const& left, CachedSegment const& right ) { return left.begin < right.begin ; }
 };
 
 class Reassembler
@@ -52,8 +53,10 @@ public:
 
 private:
   ByteStream output_;
-  std::list<CachedSegment> cache_;
+  std::set<CachedSegment> cache_;
   uint64_t last_index_ = 0;
   bool last_index_set = false;
   void flush_(); // flush cached data to output if able(best effort)
 };
+
+bool merge(CachedSegment& to,const CachedSegment& from);
