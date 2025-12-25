@@ -116,7 +116,7 @@ bool merge(CachedSegment& to,const CachedSegment& from){
     return false;
   }
 
-  if((from.begin >= to.end) and (from.end <= to.begin)){
+  if((from.begin >= to.begin) and (from.end <= to.end)){
     return true; // totally overlap
   }
 
