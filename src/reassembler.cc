@@ -28,10 +28,10 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
 
   // truncate given data to [pushed,unacceptable)
   if ( newSeg.begin < pushed_i ) {
-    data = data.substr( pushed_i - newSeg.begin );
+    newSeg.data = newSeg.data.substr( pushed_i - newSeg.begin );
     newSeg.begin = pushed_i;
   }
-  data = data.substr(0UL,unacceptable_i - newSeg.begin);
+  newSeg.data = newSeg.data.substr(0UL,unacceptable_i - newSeg.begin);
   newSeg.end = unacceptable_i < newSeg.end ? unacceptable_i : newSeg.end;
 
   // Merge any overlapped segment into newSeg
@@ -69,6 +69,13 @@ void Reassembler::flush_()
     if(seg.value().end <= pushed){
       continue;
     }
+
+    // the first not continuing one, terminate flushing.
+    if(seg.value().begin != pushed){
+      cache_.insert(cache_.begin(),std::move(seg));
+      return;
+    }
+
     auto push_start = pushed > seg.value().begin ? pushed - seg.value().begin : 0UL;
 
     if ( len > available ) {
